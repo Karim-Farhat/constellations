@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orbital Watch</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Satellite positions computed from real orbital element data, updated every second.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: oklch(0.985 0.004 240);
+    --fg: oklch(0.20 0.01 250);
+    --muted: oklch(0.52 0.01 250);
+    --muted2: oklch(0.55 0.01 250);
+    --border: oklch(0.90 0.006 240);
+    --card: #fff;
+    --accent: oklch(0.60 0.14 200);
+    --accent-hover: oklch(0.50 0.14 200);
+    --good: oklch(0.62 0.13 110);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:'Inter',system-ui,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{color:var(--accent-hover)}
+  input:focus-visible,button:focus-visible,.row:focus-visible{
+    outline:2px solid var(--accent);outline-offset:2px
+  }
+  @keyframes owPulse{0%{opacity:1}50%{opacity:0.35}100%{opacity:1}}
+  @media (prefers-reduced-motion: reduce){
+    .live-dot{animation:none !important}
+  }
+
+  .page{min-height:100vh;padding:28px;display:flex;flex-direction:column;gap:20px}
+  .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted)}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap}
+  .title{font-size:22px;font-weight:600;letter-spacing:-0.01em;text-wrap:balance}
+  .subtitle{font-size:13px;color:var(--muted);margin-top:4px}
+  .header-right{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .nav-link{font-size:13px;padding:8px 14px;border:1px solid var(--border);border-radius:8px;background:var(--card);white-space:nowrap}
+  .clock{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .live-dot{width:8px;height:8px;border-radius:50%;background:var(--good);display:inline-block;animation:owPulse 2s infinite;flex:none}
+
+  .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
+  .toolbar-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em}
+  .num-input{width:90px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;font-variant-numeric:tabular-nums;background:var(--card);color:var(--fg)}
+  .btn{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);font-size:13px;cursor:pointer;font-family:inherit;color:var(--fg)}
+  .btn-primary{border:none;background:var(--accent);color:#fff}
+  .btn-primary:hover{background:var(--accent-hover)}
+  .toolbar-loc{font-size:12px;color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
+
+  .grid{display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+
+  .groundtrack{width:100%;height:auto;display:block;background:var(--bg);border-radius:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .chip{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;font-size:12px;font-family:inherit;background:#fff;border:1px solid var(--border);cursor:pointer}
+  .chip .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+  .chip.selected{border-width:2px}
+  .chip.errored{opacity:0.4;cursor:not-allowed}
+
+  .search-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .city-input{flex:1;min-width:160px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;background:var(--card);color:var(--fg)}
+  .status-line{font-size:12px;color:var(--muted);margin-bottom:8px}
+
+  .row{padding:8px 6px;font-size:13px;cursor:default;border-bottom:1px solid var(--border)}
+  .pass-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .pass-row .name{flex:1}
+  .pass-row .muted{color:var(--muted)}
+  .pass-row .strong{font-weight:600}
+  .simple-pass{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .empty-note{font-size:13px;color:var(--muted)}
+
+  .cat-label{font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:4px}
+  .sat-name{font-size:18px;font-weight:600;margin-bottom:16px;text-wrap:balance}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .stat-val{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+  .stat-unit{font-size:13px;font-weight:400;color:var(--muted)}
+  .stat-label{font-size:12px;color:var(--muted)}
+  .over-note{margin-top:16px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .globe-svg{width:100%;height:auto;display:block}
+  .globe-caption{font-size:12px;color:var(--muted);margin-top:8px}
+
+  .footer-note{font-size:12px;color:var(--muted2);text-align:center;padding-top:4px}
+
+  @media (max-width:860px){
+    .grid{grid-template-columns:1fr}
+  }
+  @media (max-width:640px){
+    .page{padding:14px;gap:14px}
+    .title{font-size:19px}
+    .card{padding:14px}
+    .toolbar-loc{margin-left:0;width:100%}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div>
+      <div class="title">Orbital Watch</div>
+      <div class="subtitle">Satellite positions computed from real orbital element data, updated every second</div>
+    </div>
+    <div class="header-right">
+      <a href="index.html" class="nav-link">Constellations →</a>
+      <div class="clock"><span class="live-dot"></span><span id="clockText"></span></div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="toolbar-label">Observer location</div>
+    <input id="latInput" class="num-input" type="number" step="0.01" value="30.0444" placeholder="Lat" aria-label="Latitude" />
+    <input id="lonInput" class="num-input" type="number" step="0.01" value="31.2357" placeholder="Lon" aria-label="Longitude" />
+    <button id="applyBtn" class="btn">Apply</button>
+    <button id="useLocBtn" class="btn btn-primary">Use my location</button>
+    <div id="locLabel" class="toolbar-loc">Cairo, Egypt (default) · 30.0444°, 31.2357°</div>
+  </div>
+  <div id="locStatus" class="status-line" role="status" aria-live="polite"></div>
+
+  <div class="grid">
+    <div class="col">
+      <div class="card">
+        <div class="eyebrow" style="margin-bottom:12px">Ground track</div>
+        <svg id="groundSvg" class="groundtrack" viewBox="0 0 960 480">
+          <path id="landPath" fill="oklch(0.90 0.006 240)" stroke="none"></path>
+          <path id="trailPath" fill="none" stroke="oklch(0.60 0.14 200)" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.7"></path>
+          <g id="satDots"></g>
+        </svg>
+        <div id="chips" class="chips"></div>
+      </div>
+
+      <div class="card">
+        <div class="eyebrow" style="margin-bottom:12px">Visible from a city</div>
+        <div class="search-row">
+          <input id="visCityInput" class="city-input" type="text" placeholder="e.g. Alexandria" value="Cairo" aria-label="City" />
+          <button id="searchVisBtn" class="btn btn-primary">Search</button>
+        </div>
+        <div id="visStatusLine" class="status-line">Enter a city to check visible passes.</div>
+        <div id="visiblePassesList"></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card">
+        <div id="selCategory" class="cat-label"></div>
+        <div id="selName" class="sat-name"></div>
+        <div id="selLoaded" class="stat-grid" style="display:none">
+          <div>
+            <div class="stat-val"><span id="selAlt"></span><span class="stat-unit"> km</span></div>
+            <div class="stat-label">Altitude</div>
+          </div>
+          <div>
+            <div class="stat-val"><span id="selVel"></span><span class="stat-unit"> km/s</span></div>
+            <div class="stat-label">Velocity</div>
+          </div>
+          <div>
+            <div class="stat-val"><span id="selPeriod"></span><span class="stat-unit"> min</span></div>
+            <div class="stat-label">Orbital period</div>
+          </div>
+          <div>
+            <div class="stat-val"><span id="selIncl"></span><span class="stat-unit">°</span></div>
+            <div class="stat-label">Inclination</div>
+          </div>
+        </div>
+        <div id="selOverNote" class="over-note" style="display:none"></div>
+        <div id="selErrored" class="empty-note" style="display:none">Orbital data unavailable for this satellite right now.</div>
+        <div id="selLoading" class="empty-note">Fetching orbital data…</div>
+      </div>
+
+      <div class="card">
+        <div class="eyebrow" style="margin-bottom:12px">3D view</div>
+        <svg id="globeSvg" class="globe-svg" viewBox="0 0 300 300">
+          <circle cx="150" cy="150" r="130" fill="oklch(0.985 0.004 240)" stroke="oklch(0.90 0.006 240)"></circle>
+          <path id="globeGraticule" fill="none" stroke="oklch(0.90 0.006 240)" stroke-width="0.5"></path>
+          <path id="globeLand" fill="oklch(0.85 0.01 240)" stroke="none"></path>
+          <g id="globeDots"></g>
+        </svg>
+        <div id="globeCaption" class="globe-caption"></div>
+      </div>
+
+      <div class="card">
+        <div id="passesTitle" class="eyebrow" style="margin-bottom:12px">Upcoming passes</div>
+        <div id="passesList"></div>
+      </div>
+
+      <div class="card">
+        <div class="eyebrow" style="margin-bottom:12px">Overhead right now</div>
+        <div id="skyNowList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note">Positions are calculated with SGP4 propagation from NORAD two-line element sets fetched from CelesTrak.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5/dist/satellite.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  var SATS = [
+    { id: 25544, name: 'ISS (ZARYA)', category: 'Space Station', hue: 200 },
+    { id: 48274, name: 'Tiangong', category: 'Space Station', hue: 200 },
+    { id: 20580, name: 'Hubble Space Telescope', category: 'Telescope', hue: 265 },
+    { id: 43013, name: 'NOAA 20', category: 'Weather', hue: 110 },
+    { id: 41866, name: 'GOES 16', category: 'Weather', hue: 110 },
+    { id: 25994, name: 'Terra', category: 'Earth Observation', hue: 155 },
+    { id: 49260, name: 'Landsat 9', category: 'Earth Observation', hue: 155 },
+    { id: 44713, name: 'Starlink-1130', category: 'Communications', hue: 25 }
+  ];
+
+  var FALLBACK_TLE = {
+    25544: {
+      line1: '1 25544U 98067A   25308.35786713  .00010709  00000+0  19707-3 0  9991',
+      line2: '2 25544  51.6336 332.4903 0005031  16.0382 344.0765 15.49743270536903',
+      epoch: 'Nov 4, 2025'
+    }
+  };
+
+  var state = {
+    now: new Date(),
+    satData: {},
+    land: null,
+    selectedId: 25544,
+    location: { lat: 30.0444, lon: 31.2357, label: 'Cairo, Egypt (default)' },
+    passes: [],
+    visCityInput: 'Cairo',
+    visCity: { lat: 30.0444, lon: 31.2357, label: 'Cairo, Egypt' },
+    visLoading: false,
+    visError: null,
+    visiblePasses: []
+  };
+  var lastVisibleLoadedCount = 0;
+
+  var el = {};
+  ['latInput', 'lonInput', 'applyBtn', 'useLocBtn', 'locLabel', 'locStatus', 'clockText',
+   'groundSvg', 'landPath', 'trailPath', 'satDots', 'chips',
+   'visCityInput', 'searchVisBtn', 'visStatusLine', 'visiblePassesList',
+   'selCategory', 'selName', 'selLoaded', 'selAlt', 'selVel', 'selPeriod', 'selIncl',
+   'selOverNote', 'selErrored', 'selLoading',
+   'globeSvg', 'globeGraticule', 'globeLand', 'globeDots', 'globeCaption',
+   'passesTitle', 'passesList', 'skyNowList'
+  ].forEach(function (id) { el[id] = document.getElementById(id); });
+
+  function setLocStatus(msg, isError) {
+    el.locStatus.textContent = msg || '';
+    el.locStatus.style.color = isError ? 'oklch(0.55 0.17 35)' : '';
+  }
+
+  function geoErrorMessage(err) {
+    if (err && err.code === 1) return 'Location access was denied. Enter your latitude and longitude above and press Apply.';
+    if (err && err.code === 3) return 'Location request timed out. Enter your latitude and longitude above and press Apply.';
+    return "This page can't access your device location here. Enter your latitude and longitude above and press Apply.";
+  }
+
+  function useMyLocation(opts) {
+    var silent = !!(opts && opts.silent);
+    if (!navigator.geolocation) {
+      if (!silent) setLocStatus(geoErrorMessage(null), true);
+      return;
+    }
+    if (!silent) setLocStatus('Locating…', false);
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = +pos.coords.latitude.toFixed(4), lon = +pos.coords.longitude.toFixed(4);
+      state.location = { lat: lat, lon: lon, label: 'Your location' };
+      el.latInput.value = String(lat);
+      el.lonInput.value = String(lon);
+      updateLocationLabel();
+      computePasses();
+      renderFrame();
+      setLocStatus('', false);
+    }, function (err) {
+      if (!silent) setLocStatus(geoErrorMessage(err), true);
+    }, { timeout: 6000 });
+  }
+
+  function updateLocationLabel() {
+    el.locLabel.textContent = state.location.label + ' · ' + state.location.lat + '°, ' + state.location.lon + '°';
+  }
+
+  function applyLocation() {
+    var lat = parseFloat(el.latInput.value), lon = parseFloat(el.lonInput.value);
+    if (!isNaN(lat) && !isNaN(lon)) {
+      state.location = { lat: lat, lon: lon, label: 'Custom' };
+      updateLocationLabel();
+      computePasses();
+      renderFrame();
+    }
+  }
+
+  function fmtTime(d) {
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function compass(az) {
+    var dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    return dirs[Math.round(az / 22.5) % 16];
+  }
+
+  function sunPositionEci(date) {
+    var sl = window.satellite;
+    var jday = sl.jday(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds());
+    var n = jday - 2451545.0;
+    var L = ((280.460 + 0.9856474 * n) % 360 + 360) % 360;
+    var g = (((357.528 + 0.9856003 * n) % 360 + 360) % 360) * Math.PI / 180;
+    var lambda = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * Math.PI / 180;
+    var epsilon = 23.439 * Math.PI / 180;
+    var AU_KM = 149597870.7;
+    var R = (1.00014 - 0.01671 * Math.cos(g) - 0.00014 * Math.cos(2 * g)) * AU_KM;
+    return { x: R * Math.cos(lambda), y: R * Math.cos(epsilon) * Math.sin(lambda), z: R * Math.sin(epsilon) * Math.sin(lambda) };
+  }
+
+  function isIlluminated(satEci, sunEci) {
+    function mag(v) { return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z); }
+    var sunMag = mag(sunEci);
+    var u = { x: sunEci.x / sunMag, y: sunEci.y / sunMag, z: sunEci.z / sunMag };
+    var dot = satEci.x * u.x + satEci.y * u.y + satEci.z * u.z;
+    if (dot > 0) return true;
+    var perp = { x: satEci.x - dot * u.x, y: satEci.y - dot * u.y, z: satEci.z - dot * u.z };
+    return mag(perp) > 6378.137;
+  }
+
+  function geocodeCity(name) {
+    if (!name || !name.trim()) return;
+    state.visLoading = true; state.visError = null;
+    renderVisStatus();
+    fetch('https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(name.trim()) + '&count=1')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.results || !data.results.length) {
+          state.visLoading = false; state.visError = 'City not found.';
+          renderVisStatus();
+          return;
+        }
+        var r = data.results[0];
+        var label = r.admin1 ? (r.name + ', ' + r.admin1 + ', ' + r.country) : (r.name + ', ' + r.country);
+        state.visCity = { lat: r.latitude, lon: r.longitude, label: label };
+        state.visLoading = false; state.visError = null;
+        renderVisStatus();
+        computeVisiblePasses();
+      })
+      .catch(function () {
+        state.visLoading = false; state.visError = 'Could not look up that city.';
+        renderVisStatus();
+      });
+  }
+
+  function computeVisiblePasses() {
+    var city = state.visCity;
+    if (!city) return;
+    var loadedSats = SATS.filter(function (s) { return state.satData[s.id] && state.satData[s.id].loaded; });
+    if (loadedSats.length === 0) return;
+    var sl = window.satellite;
+    var obs = { longitude: city.lon * Math.PI / 180, latitude: city.lat * Math.PI / 180, height: 0.1 };
+    var start = new Date();
+    var stepSec = 60, totalHours = 48;
+    var steps = Math.floor(totalHours * 3600 / stepSec);
+    var active = {};
+    var results = [];
+    for (var i = 0; i <= steps; i++) {
+      var t = new Date(start.getTime() + i * stepSec * 1000);
+      var gmst = sl.gstime(t);
+      var sunEci = sunPositionEci(t);
+      var sunLook = sl.ecfToLookAngles(obs, sl.eciToEcf(sunEci, gmst));
+      var skyDark = (sunLook.elevation * 180 / Math.PI) < -6;
+      loadedSats.forEach(function (sat) {
+        var d = state.satData[sat.id];
+        var pv = sl.propagate(d.satrec, t);
+        if (!pv || !pv.position) return;
+        var ecf = sl.eciToEcf(pv.position, gmst);
+        var look = sl.ecfToLookAngles(obs, ecf);
+        var elevDeg = look.elevation * 180 / Math.PI;
+        var vis = skyDark && elevDeg > 10 && isIlluminated(pv.position, sunEci);
+        var cur = active[sat.id];
+        if (vis) {
+          if (!cur) active[sat.id] = { start: t, max: elevDeg, name: sat.name, color: 'oklch(0.62 0.13 ' + sat.hue + ')' };
+          else if (elevDeg > cur.max) cur.max = elevDeg;
+        } else if (cur) {
+          cur.end = t;
+          results.push(cur);
+          delete active[sat.id];
+        }
+      });
+    }
+    Object.keys(active).forEach(function (id) {
+      var cur = active[id];
+      cur.end = new Date(start.getTime() + steps * stepSec * 1000);
+      results.push(cur);
+    });
+    results.sort(function (a, b) { return a.start - b.start; });
+    state.visiblePasses = results.slice(0, 10).map(function (p) {
+      return {
+        name: p.name, color: p.color, start: fmtTime(p.start), maxElevation: Math.round(p.max),
+        durationMin: Math.max(1, Math.round((p.end - p.start) / 60000))
+      };
+    });
+    renderVisiblePasses();
+  }
+
+  function fetchTLE(sat) {
+    fetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=' + sat.id + '&FORMAT=TLE')
+      .then(function (r) { if (!r.ok) throw new Error('bad status'); return r.text(); })
+      .then(function (text) {
+        var lines = text.trim().split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+        var l1, l2;
+        if (lines.length >= 3) { l1 = lines[1]; l2 = lines[2]; }
+        else if (lines.length === 2) { l1 = lines[0]; l2 = lines[1]; }
+        else throw new Error('bad tle');
+        var satrec = window.satellite.twoline2satrec(l1, l2);
+        state.satData[sat.id] = { loaded: true, error: false, satrec: satrec, stale: false };
+        onSatLoaded(sat.id);
+      })
+      .catch(function (err) {
+        console.warn('TLE fetch failed for ' + sat.name + ' (' + sat.id + '):', err && err.message ? err.message : err);
+        var fb = FALLBACK_TLE[sat.id];
+        if (fb) {
+          var satrec = window.satellite.twoline2satrec(fb.line1, fb.line2);
+          state.satData[sat.id] = { loaded: true, error: false, satrec: satrec, stale: true, epoch: fb.epoch };
+          onSatLoaded(sat.id);
+        } else {
+          state.satData[sat.id] = { loaded: false, error: true };
+          renderFrame();
+        }
+      });
+  }
+
+  function onSatLoaded(satId) {
+    if (satId === state.selectedId) computePasses();
+    renderFrame();
+    var loadedCount = Object.keys(state.satData).filter(function (id) { return state.satData[id].loaded; }).length;
+    if (loadedCount !== lastVisibleLoadedCount) {
+      lastVisibleLoadedCount = loadedCount;
+      computeVisiblePasses();
+    }
+  }
+
+  function getLiveData(sat, now) {
+    var d = state.satData[sat.id];
+    if (!d || !d.loaded) return null;
+    var sl = window.satellite;
+    var pv = sl.propagate(d.satrec, now);
+    if (!pv || !pv.position) return null;
+    var gmst = sl.gstime(now);
+    var gd = sl.eciToGeodetic(pv.position, gmst);
+    var lat = sl.degreesLat(gd.latitude);
+    var lon = sl.degreesLong(gd.longitude);
+    var alt = gd.height;
+    var vel = Math.sqrt(pv.velocity.x * pv.velocity.x + pv.velocity.y * pv.velocity.y + pv.velocity.z * pv.velocity.z);
+    var period = (2 * Math.PI) / d.satrec.no;
+    var incl = d.satrec.inclo * 180 / Math.PI;
+    var ecf = sl.eciToEcf(pv.position, gmst);
+    var loc = state.location;
+    var obs = { longitude: loc.lon * Math.PI / 180, latitude: loc.lat * Math.PI / 180, height: 0.1 };
+    var look = sl.ecfToLookAngles(obs, ecf);
+    return { lat: lat, lon: lon, alt: alt, vel: vel, period: period, incl: incl, elevation: look.elevation * 180 / Math.PI, azimuth: look.azimuth * 180 / Math.PI };
+  }
+
+  function getTrail(sat, now) {
+    var d = state.satData[sat.id];
+    if (!d || !d.loaded) return [];
+    var sl = window.satellite;
+    var period = (2 * Math.PI) / d.satrec.no;
+    var steps = 48;
+    var pts = [];
+    for (var i = 0; i <= steps; i++) {
+      var tMin = -period / 2 + (period * i / steps);
+      var t = new Date(now.getTime() + tMin * 60000);
+      var pv = sl.propagate(d.satrec, t);
+      if (!pv || !pv.position) continue;
+      var gmst = sl.gstime(t);
+      var gd = sl.eciToGeodetic(pv.position, gmst);
+      pts.push([sl.degreesLong(gd.longitude), sl.degreesLat(gd.latitude)]);
+    }
+    return pts;
+  }
+
+  function computePasses() {
+    var d = state.satData[state.selectedId];
+    if (!d || !d.loaded) { state.passes = []; renderPasses(); return; }
+    var sl = window.satellite;
+    var loc = state.location;
+    var obs = { longitude: loc.lon * Math.PI / 180, latitude: loc.lat * Math.PI / 180, height: 0.1 };
+    var start = new Date();
+    var stepSec = 60, totalHours = 24;
+    var steps = Math.floor(totalHours * 3600 / stepSec);
+    var passes = [];
+    var current = null;
+    for (var i = 0; i <= steps; i++) {
+      var t = new Date(start.getTime() + i * stepSec * 1000);
+      var pv = sl.propagate(d.satrec, t);
+      if (!pv || !pv.position) continue;
+      var gmst = sl.gstime(t);
+      var ecf = sl.eciToEcf(pv.position, gmst);
+      var look = sl.ecfToLookAngles(obs, ecf);
+      var elevDeg = look.elevation * 180 / Math.PI;
+      if (elevDeg > 0) {
+        if (!current) current = { start: t, max: elevDeg, maxTime: t };
+        else if (elevDeg > current.max) { current.max = elevDeg; current.maxTime = t; }
+      } else if (current) {
+        current.end = t;
+        passes.push(current);
+        current = null;
+      }
+    }
+    if (current) { current.end = new Date(start.getTime() + steps * stepSec * 1000); passes.push(current); }
+    state.passes = passes.slice(0, 6).map(function (p) {
+      return { start: fmtTime(p.start), maxElevation: Math.round(p.max), durationMin: Math.round((p.end - p.start) / 60000) };
+    });
+    renderPasses();
+  }
+
+  // ---- rendering ----
+
+  function selectSat(id) {
+    var d = state.satData[id];
+    if (d && d.error) return;
+    state.selectedId = id;
+    computePasses();
+    renderFrame();
+  }
+
+  function renderVisStatus() {
+    el.visStatusLine.textContent = state.visLoading
+      ? 'Looking up city…'
+      : (state.visError || (state.visCity ? ('Showing passes for ' + state.visCity.label) : 'Enter a city to check visible passes.'));
+  }
+
+  function renderVisiblePasses() {
+    el.visiblePassesList.textContent = '';
+    if (state.visiblePasses.length === 0) {
+      if (!state.visLoading && !state.visError) {
+        var note = document.createElement('div');
+        note.className = 'empty-note';
+        note.textContent = 'No naked-eye passes in the next 48 hours for ' + (state.visCity ? state.visCity.label : 'this city') + ': sky dark, satellite sunlit, above 10° elevation.';
+        el.visiblePassesList.appendChild(note);
+      }
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    state.visiblePasses.forEach(function (v) {
+      var row = document.createElement('div');
+      row.className = 'pass-row';
+      var dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.width = '8px'; dot.style.height = '8px'; dot.style.borderRadius = '50%';
+      dot.style.background = v.color; dot.style.display = 'inline-block'; dot.style.flex = 'none';
+      var name = document.createElement('span'); name.className = 'name'; name.textContent = v.name;
+      var start = document.createElement('span'); start.className = 'muted'; start.textContent = v.start;
+      var dur = document.createElement('span'); dur.className = 'muted'; dur.textContent = v.durationMin + ' min';
+      var maxEl = document.createElement('span'); maxEl.className = 'strong'; maxEl.textContent = v.maxElevation + '°';
+      row.appendChild(dot); row.appendChild(name); row.appendChild(start); row.appendChild(dur); row.appendChild(maxEl);
+      frag.appendChild(row);
+    });
+    el.visiblePassesList.appendChild(frag);
+  }
+
+  function renderPasses() {
+    el.passesTitle.textContent = 'Upcoming passes over ' + state.location.label;
+    el.passesList.textContent = '';
+    if (state.passes.length === 0) {
+      var note = document.createElement('div');
+      note.className = 'empty-note';
+      note.textContent = 'No passes above the horizon in the next 24 hours, or orbital data still loading.';
+      el.passesList.appendChild(note);
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    state.passes.forEach(function (p) {
+      var row = document.createElement('div');
+      row.className = 'simple-pass';
+      var start = document.createElement('div'); start.textContent = p.start;
+      var dur = document.createElement('div'); dur.className = 'muted'; dur.textContent = p.durationMin + ' min';
+      var maxEl = document.createElement('div'); maxEl.className = 'strong'; maxEl.textContent = p.maxElevation + '° max';
+      row.appendChild(start); row.appendChild(dur); row.appendChild(maxEl);
+      frag.appendChild(row);
+    });
+    el.passesList.appendChild(frag);
+  }
+
+  function buildChips() {
+    el.chips.textContent = '';
+    var frag = document.createDocumentFragment();
+    SATS.forEach(function (sat) {
+      var d = state.satData[sat.id];
+      var color = 'oklch(0.62 0.13 ' + sat.hue + ')';
+      var errored = !!(d && d.error);
+      var chip = document.createElement('button');
+      chip.type = 'button';
+      chip.dataset.satId = sat.id;
+      chip.className = 'chip' + (errored ? ' errored' : '');
+      var dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = color;
+      var name = document.createElement('span');
+      name.textContent = sat.name;
+      chip.appendChild(dot); chip.appendChild(name);
+      chip.addEventListener('click', function () { selectSat(sat.id); });
+      frag.appendChild(chip);
+    });
+    el.chips.appendChild(frag);
+  }
+
+  function updateChipsSelection() {
+    var chips = el.chips.querySelectorAll('.chip');
+    chips.forEach(function (chip) {
+      var id = Number(chip.dataset.satId);
+      var sat = SATS.filter(function (s) { return s.id === id; })[0];
+      var color = 'oklch(0.62 0.13 ' + sat.hue + ')';
+      var selected = id === state.selectedId;
+      chip.classList.toggle('selected', selected);
+      chip.style.borderColor = selected ? color : '';
+      chip.style.background = selected ? ('oklch(0.94 0.03 ' + sat.hue + ')') : '#fff';
+      var d = state.satData[id];
+      chip.classList.toggle('errored', !!(d && d.error));
+    });
+  }
+
+  var projection = null, pathGen = null;
+
+  function ensureProjection() {
+    if (!window.d3) return;
+    if (!projection) {
+      projection = window.d3.geoEquirectangular().fitSize([960, 480], { type: 'Sphere' });
+      pathGen = window.d3.geoPath(projection);
+    }
+  }
+
+  function renderFrame() {
+    var now = state.now;
+    ensureProjection();
+
+    el.clockText.textContent = now.toUTCString().replace('GMT', 'UTC');
+
+    if (state.land && pathGen) {
+      el.landPath.setAttribute('d', pathGen(state.land) || '');
+    }
+
+    if (!el.chips.children.length) buildChips();
+    updateChipsSelection();
+
+    var satLive = {};
+    SATS.forEach(function (sat) {
+      var d = state.satData[sat.id];
+      satLive[sat.id] = (d && d.loaded && projection) ? getLiveData(sat, now) : null;
+    });
+
+    el.satDots.textContent = '';
+    var dotsFrag = document.createDocumentFragment();
+    SATS.forEach(function (sat) {
+      var live = satLive[sat.id];
+      if (!live || !projection) return;
+      var p = projection([live.lon, live.lat]);
+      if (!p) return;
+      var c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('cx', p[0].toFixed(2));
+      c.setAttribute('cy', p[1].toFixed(2));
+      c.setAttribute('r', '5');
+      c.setAttribute('fill', 'oklch(0.62 0.13 ' + sat.hue + ')');
+      c.setAttribute('stroke', '#fff');
+      c.setAttribute('stroke-width', '1.5');
+      c.style.cursor = 'pointer';
+      c.setAttribute('tabindex', '0');
+      c.setAttribute('role', 'button');
+      c.setAttribute('aria-label', sat.name);
+      (function (id) {
+        c.addEventListener('click', function () { selectSat(id); });
+        c.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectSat(id); } });
+      })(sat.id);
+      dotsFrag.appendChild(c);
+    });
+    el.satDots.appendChild(dotsFrag);
+
+    var selectedSat = SATS.filter(function (s) { return s.id === state.selectedId; })[0];
+    var selData = state.satData[state.selectedId];
+    var selLive = satLive[state.selectedId];
+
+    if (selectedSat && selData && selData.loaded && pathGen) {
+      var pts = getTrail(selectedSat, now);
+      el.trailPath.setAttribute('d', pts.length > 1 ? (pathGen({ type: 'LineString', coordinates: pts }) || '') : '');
+    } else {
+      el.trailPath.setAttribute('d', '');
+    }
+
+    el.selCategory.textContent = selectedSat ? selectedSat.category : '';
+    el.selName.textContent = selectedSat ? selectedSat.name : '';
+    var errored = !!(selData && selData.error);
+    var loaded = !!(selData && selData.loaded);
+    el.selErrored.style.display = errored ? '' : 'none';
+    el.selLoading.style.display = (!loaded && !errored) ? '' : 'none';
+    el.selLoaded.style.display = (loaded && selLive) ? '' : 'none';
+    el.selOverNote.style.display = (loaded && selLive) ? '' : 'none';
+    if (loaded && selLive) {
+      el.selAlt.textContent = Math.round(selLive.alt);
+      el.selVel.textContent = selLive.vel.toFixed(2);
+      el.selPeriod.textContent = selLive.period.toFixed(1);
+      el.selIncl.textContent = selLive.incl.toFixed(1);
+      var staleNote = selData.stale ? (' (orbital data from ' + selData.epoch + ', live refresh unavailable)') : '';
+      el.selOverNote.textContent = 'Currently over ' + selLive.lat.toFixed(2) + '°, ' + selLive.lon.toFixed(2) + '°' + staleNote;
+    }
+
+    // globe
+    var gw = 300, gh = 300, gr = 130;
+    if (state.land && window.d3 && selLive) {
+      var rotLon = -selLive.lon, rotLat = -20;
+      var globeProj = window.d3.geoOrthographic().scale(gr).translate([gw / 2, gh / 2]).rotate([rotLon, rotLat, 0]).clipAngle(90);
+      var globePath = window.d3.geoPath(globeProj);
+      el.globeLand.setAttribute('d', globePath(state.land) || '');
+      el.globeGraticule.setAttribute('d', globePath(window.d3.geoGraticule()()) || '');
+      var center = [-rotLon, -rotLat];
+      el.globeDots.textContent = '';
+      var gFrag = document.createDocumentFragment();
+      SATS.forEach(function (sat) {
+        var live = satLive[sat.id];
+        if (!live) return;
+        var dist = window.d3.geoDistance([live.lon, live.lat], center);
+        if (dist >= Math.PI / 2) return;
+        var pt = globeProj([live.lon, live.lat]);
+        if (!pt) return;
+        var c = document.createElementNS(SVGNS, 'circle');
+        c.setAttribute('cx', pt[0].toFixed(2));
+        c.setAttribute('cy', pt[1].toFixed(2));
+        c.setAttribute('r', '4');
+        c.setAttribute('fill', 'oklch(0.62 0.13 ' + sat.hue + ')');
+        c.setAttribute('stroke', '#fff');
+        c.setAttribute('stroke-width', '1');
+        gFrag.appendChild(c);
+      });
+      el.globeDots.appendChild(gFrag);
+      el.globeCaption.textContent = "Centered on " + (selectedSat ? selectedSat.name : '') + "'s ground track";
+    } else {
+      el.globeLand.setAttribute('d', '');
+      el.globeGraticule.setAttribute('d', '');
+      el.globeDots.textContent = '';
+      el.globeCaption.textContent = '';
+    }
+
+    // overhead right now
+    var skyNow = SATS
+      .map(function (sat) { return { sat: sat, live: satLive[sat.id] }; })
+      .filter(function (x) { return x.live && x.live.elevation > 0; })
+      .sort(function (a, b) { return b.live.elevation - a.live.elevation; });
+    el.skyNowList.textContent = '';
+    if (skyNow.length === 0) {
+      var noneNote = document.createElement('div');
+      noneNote.className = 'empty-note';
+      noneNote.textContent = 'None of the tracked satellites are above the horizon at this location right now.';
+      el.skyNowList.appendChild(noneNote);
+    } else {
+      var skyFrag = document.createDocumentFragment();
+      skyNow.forEach(function (x) {
+        var row = document.createElement('div');
+        row.className = 'pass-row';
+        var dot = document.createElement('span');
+        dot.style.width = '8px'; dot.style.height = '8px'; dot.style.borderRadius = '50%';
+        dot.style.background = 'oklch(0.62 0.13 ' + x.sat.hue + ')'; dot.style.display = 'inline-block'; dot.style.flex = 'none';
+        var name = document.createElement('span'); name.className = 'name'; name.textContent = x.sat.name;
+        var dir = document.createElement('span'); dir.className = 'muted'; dir.textContent = compass(x.live.azimuth);
+        var elev = document.createElement('span'); elev.className = 'strong'; elev.textContent = Math.round(x.live.elevation) + '°';
+        row.appendChild(dot); row.appendChild(name); row.appendChild(dir); row.appendChild(elev);
+        skyFrag.appendChild(row);
+      });
+      el.skyNowList.appendChild(skyFrag);
+    }
+  }
+
+  function wire() {
+    el.applyBtn.addEventListener('click', applyLocation);
+    el.useLocBtn.addEventListener('click', function () { useMyLocation(); });
+    el.searchVisBtn.addEventListener('click', function () { geocodeCity(el.visCityInput.value); });
+    el.visCityInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); geocodeCity(el.visCityInput.value); }
+    });
+  }
+
+  function boot() {
+    wire();
+    updateLocationLabel();
+    renderVisStatus();
+    renderPasses();
+    renderFrame();
+
+    SATS.forEach(fetchTLE);
+
+    fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json')
+      .then(function (r) { return r.json(); })
+      .then(function (topo) {
+        state.land = window.topojson.feature(topo, topo.objects.land);
+        renderFrame();
+      })
+      .catch(function () {});
+
+    useMyLocation({ silent: true });
+
+    setInterval(function () {
+      state.now = new Date();
+      renderFrame();
+    }, 1000);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>
